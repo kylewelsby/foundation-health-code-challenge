@@ -18,16 +18,32 @@ Prerequisites: [mise](https://mise.jdx.dev) (pins the toolchain) — or just
 mise install          # installs Bun (the only pinned tool)
 bun install           # installs wrangler + dev dependencies
 
-bun run dev           # runs the Worker locally on workerd via `wrangler dev` (:8787)
-bun test              # runs the parser + endpoint test suites
-bun run typecheck     # tsc --noEmit (strict; enforces no `any`/`unknown`)
+bun run build         # builds the Svelte UI (web/ -> dist/)
+bun run dev           # serves the UI + API on workerd via `wrangler dev` (:8787)
+
+bun test              # parser + endpoint test suites
+bun run typecheck     # tsc --noEmit (strict; no `any`/`unknown`)
+bun run check:svelte  # svelte-check (UI types)
+bun run lint          # Biome (lint + format)
 ```
 
-Then, in another terminal, hit the running endpoint:
+Open **http://localhost:8787** for the upload UI, or hit the endpoint directly:
 
 ```bash
 curl -X POST -F "file=@tests/fixtures/sample.mp3" http://localhost:8787/file-upload
 ```
+
+Interactive API reference (Scalar) is at **`/docs`**; the raw spec at **`/openapi.json`**.
+For UI development with hot reload, run `bun run dev:web` (Vite, proxies the API to `wrangler dev`).
+
+## Routes
+
+| Route | Purpose |
+| ----- | ------- |
+| `GET /` | Svelte upload UI (served from `dist/` via Workers Assets) |
+| `POST /file-upload` | the API — count frames in an uploaded MP3 |
+| `GET /docs` | interactive API reference (Scalar) |
+| `GET /openapi.json` | OpenAPI 3.1 spec |
 
 ## API
 
@@ -121,7 +137,9 @@ silence or a tone (no copyright concern), and counts are cross-checked against
 
 ```
 src/lib/mp3/analyze.ts   # the pure, typed frame parser (the heart of the exercise)
-src/worker.ts            # the Cloudflare Worker: POST /file-upload
+src/worker.ts            # the Cloudflare Worker: routes /file-upload, /docs, /openapi.json
+src/openapi.ts           # OpenAPI 3.1 spec
+web/                     # Svelte 5 + Vite + Tailwind upload UI (builds to dist/)
 tests/                   # bun test suites + fixtures
 CONTEXT.md               # domain glossary
 docs/adr/                # architecture decision records

@@ -13,3 +13,4 @@ _research/
 # misc
 .DS_Store
 *.log
+.claude/

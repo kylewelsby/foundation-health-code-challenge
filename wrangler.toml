@@ -3,3 +3,7 @@ main = "src/worker.ts"
 compatibility_date = "2026-06-01"
 
 # Pure Web APIs only (Request/Response/FormData/Uint8Array) — no nodejs_compat needed.
+
+# The Svelte SPA (built to dist/) is served as static assets; non-asset routes hit the Worker.
+[assets]
+directory = "./dist"

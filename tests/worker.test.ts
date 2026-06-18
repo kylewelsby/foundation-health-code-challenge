@@ -47,3 +47,19 @@ test("unknown path -> 404", async () => {
   const res = await worker.fetch(new Request("http://localhost/nope", { method: "POST" }));
   expect(res.status).toBe(404);
 });
+
+test("GET /openapi.json serves the OpenAPI spec", async () => {
+  const res = await worker.fetch(new Request("http://localhost/openapi.json"));
+  expect(res.status).toBe(200);
+  expect(res.headers.get("content-type")).toContain("application/json");
+  const spec = (await res.json()) as { openapi: string; paths: Record<string, unknown> };
+  expect(spec.openapi).toBe("3.1.0");
+  expect(spec.paths["/file-upload"]).toBeDefined();
+});
+
+test("GET /docs serves the API reference page", async () => {
+  const res = await worker.fetch(new Request("http://localhost/docs"));
+  expect(res.status).toBe(200);
+  expect(res.headers.get("content-type")).toContain("text/html");
+  expect(await res.text()).toContain("/openapi.json");
+});
