@@ -7,7 +7,7 @@
     "dev": "wrangler dev",
     "dev:web": "vite",
     "build": "vite build",
-    "deploy": "vite build && wrangler deploy",
+    "deploy": "vite build && wrangler deploy --autoconfig=false",
     "test": "bun test tests/",
     "typecheck": "tsc --noEmit",
     "check:svelte": "svelte-check --tsconfig ./web/tsconfig.json",

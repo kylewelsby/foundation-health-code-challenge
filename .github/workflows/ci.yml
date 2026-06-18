@@ -33,8 +33,9 @@ jobs:
         run: bun run build
 
       # Validate with the SAME wrangler the deploy job uses (the locked v4 from node_modules).
+      # --autoconfig=false: we build the SPA ourselves (Vite); skip wrangler's framework detection.
       - name: Build for Workers (proves it deploys)
-        run: bunx --bun wrangler deploy --dry-run
+        run: bunx --bun wrangler deploy --dry-run --autoconfig=false
 
   # Deploy to Cloudflare on pushes to main, only after `check` passes.
   deploy:
@@ -55,7 +56,7 @@ jobs:
         run: bun run build
 
       - name: Deploy to Cloudflare Workers
-        run: bunx --bun wrangler deploy
+        run: bunx --bun wrangler deploy --autoconfig=false
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
