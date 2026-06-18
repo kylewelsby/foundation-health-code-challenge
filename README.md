@@ -125,6 +125,22 @@ cap is set by the platform's body limit and ingestion cost, not the algorithm. B
 the cap, the documented ladder is: embed the library (no upload) → chunked upload to
 R2 + async → Cloudflare Containers → plan bump. See ADR 0002.
 
+## Deployment
+
+CI deploys to Cloudflare Workers on every push to `main` (after the checks pass) — it
+builds the SPA and runs `wrangler deploy`. Two repo secrets are required
+(**Settings → Secrets and variables → Actions**):
+
+- `CLOUDFLARE_API_TOKEN` — an API token with the **Edit Cloudflare Workers** template
+  (Workers Scripts: Edit). Create it at **dash.cloudflare.com → My Profile → API Tokens**.
+- `CLOUDFLARE_ACCOUNT_ID` — your account ID (only needed if the token spans multiple accounts).
+
+To deploy manually instead: `wrangler login` then `bun run deploy` (builds + deploys).
+
+> Note: CI pins the deploy to `wrangler@3.114.17`, while local dev/build use the
+> project's `wrangler ^4`. Keep an eye on that split — if a deploy behaves oddly
+> (especially around the `[assets]` binding), align the versions.
+
 ## Testing
 
 `bun test` runs the parser suite and the endpoint suite against committed fixtures in
