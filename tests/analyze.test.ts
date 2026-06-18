@@ -66,3 +66,18 @@ test("rejects a free-format MP3 gracefully (bitrate index 0000)", () => {
   expect(r.ok).toBe(false);
   if (!r.ok) expect(r.error.code).toBe("free-format");
 });
+
+test("detects VBR and parses the Xing declared frame count", () => {
+  const r = analyzeMp3(load("vbr_3s.mp3"));
+  expect(r.ok).toBe(true);
+  if (r.ok) {
+    expect(r.analysis.bitrate.mode).toBe("vbr");
+    expect(r.analysis.header.declaredFrameCount).toBe(116);
+  }
+});
+
+test("detects CBR on a constant-bitrate file", () => {
+  const r = analyzeMp3(load("cbr_notag.mp3"));
+  expect(r.ok).toBe(true);
+  if (r.ok) expect(r.analysis.bitrate.mode).toBe("cbr");
+});

@@ -52,16 +52,27 @@ function parseHeader(b: Uint8Array, i: number): Header | null {
   return { bitrateKbps, sampleRate, channelMode, frameLength };
 }
 
-/** Does the first frame carry a Xing/Info/VBRI metadata block? */
-function detectHeaderKind(b: Uint8Array, frameStart: number, frameLength: number): HeaderKind {
+/** Parse a Xing/Info/VBRI metadata block in the first frame, if present. */
+function parseHeaderTag(
+  b: Uint8Array,
+  frameStart: number,
+  frameLength: number,
+): { kind: HeaderKind; declaredFrameCount?: number } {
   const end = Math.min(frameStart + frameLength, b.length);
   for (let i = frameStart + 4; i + 4 <= end; i++) {
     const tag = String.fromCharCode(b[i]!, b[i + 1]!, b[i + 2]!, b[i + 3]!);
-    if (tag === "Xing") return "xing";
-    if (tag === "Info") return "info";
-    if (tag === "VBRI") return "vbri";
+    if (tag === "Xing" || tag === "Info") {
+      const kind: HeaderKind = tag === "Xing" ? "xing" : "info";
+      // 4-byte big-endian flags at i+4; bit 0 (LSB at b[i+7]) => frame count present at i+8.
+      if (i + 12 <= end && (b[i + 7]! & 0x1) === 0x1) {
+        const frames = ((b[i + 8]! << 24) | (b[i + 9]! << 16) | (b[i + 10]! << 8) | b[i + 11]!) >>> 0;
+        return { kind, declaredFrameCount: frames };
+      }
+      return { kind };
+    }
+    if (tag === "VBRI") return { kind: "vbri" };
   }
-  return "none";
+  return { kind: "none" };
 }
 
 export function analyzeMp3(bytes: Uint8Array): AnalyzeResult {
@@ -90,21 +101,30 @@ export function analyzeMp3(bytes: Uint8Array): AnalyzeResult {
     return { ok: false, error: { code: "not-mpeg1-layer3", message: "No MPEG-1 Layer III frames found." } };
   }
 
-  const headerKind = detectHeaderKind(bytes, i, first.frameLength);
+  const tag = parseHeaderTag(bytes, i, first.frameLength);
 
-  // Walk frames by hopping frameLength; count every structurally valid frame.
+  // Walk frames by hopping frameLength; count every structurally valid frame,
+  // tracking per-frame bitrates to classify CBR vs VBR.
   let walked = 0;
+  let bitrateSum = 0;
+  let constantBitrate = true;
   while (true) {
     const h = parseHeader(bytes, i);
     if (h === null) break;
     if (i + h.frameLength > bytes.length) break; // truncated final frame — not counted
     walked++;
+    bitrateSum += h.bitrateKbps;
+    if (h.bitrateKbps !== first.bitrateKbps) constantBitrate = false;
     i += h.frameLength;
   }
 
   const framesIncludingHeader = walked;
-  const frameCount = headerKind === "none" ? walked : walked - 1;
+  const frameCount = tag.kind === "none" ? walked : walked - 1;
   const durationSeconds = (frameCount * SAMPLES_PER_FRAME) / first.sampleRate;
+  // Equal frame duration (1152 samples) => the time-average bitrate is the mean of per-frame bitrates.
+  const bitrate: Bitrate = constantBitrate
+    ? { mode: "cbr", kbps: first.bitrateKbps }
+    : { mode: "vbr", averageKbps: Math.round(bitrateSum / walked) };
 
   return {
     ok: true,
@@ -114,8 +134,8 @@ export function analyzeMp3(bytes: Uint8Array): AnalyzeResult {
       durationSeconds,
       sampleRate: first.sampleRate,
       channelMode: first.channelMode,
-      bitrate: { mode: "cbr", kbps: first.bitrateKbps },
-      header: { kind: headerKind },
+      bitrate,
+      header: tag,
       flags: { truncated: false, corrupt: false },
     },
   };
