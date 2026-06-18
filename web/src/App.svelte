@@ -1,5 +1,8 @@
 <script lang="ts">
 import { AudioLines, BookOpen, Clock, FileAudio, Gauge, Radio, TriangleAlert, Upload, Waves } from "@lucide/svelte";
+import { cubicOut } from "svelte/easing";
+import { Tween } from "svelte/motion";
+import { fade, slide } from "svelte/transition";
 
 type Bitrate = { mode: "cbr"; kbps: number } | { mode: "vbr"; averageKbps: number; nominalKbps?: number };
 type Analysis = {
@@ -19,6 +22,8 @@ let loading = $state(false);
 let result = $state<Analysis | null>(null);
 let error = $state<string | null>(null);
 
+const frameTween = new Tween(0, { duration: 650, easing: cubicOut });
+
 function pick(f: File | null | undefined) {
   file = f ?? null;
   result = null;
@@ -30,6 +35,7 @@ async function analyze() {
   loading = true;
   error = null;
   result = null;
+  frameTween.set(0, { duration: 0 }); // reset so the count-up starts from zero
   try {
     const form = new FormData();
     form.set("file", file);
@@ -37,6 +43,7 @@ async function analyze() {
     const body: unknown = await res.json();
     if (res.ok) {
       result = body as Analysis;
+      frameTween.set(result.frameCount); // animate the count up to the result
     } else {
       const detail = body as { error?: { message?: string } };
       error = detail.error?.message ?? `Request failed (${res.status})`;
@@ -131,6 +138,7 @@ const bitrateLabel = $derived.by(() => {
       {#if error}
         <div
           class="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+          transition:fade={{ duration: 150 }}
         >
           <TriangleAlert size={16} class="mt-0.5 shrink-0" />
           <span>{error}</span>
@@ -138,10 +146,12 @@ const bitrateLabel = $derived.by(() => {
       {/if}
 
       {#if result}
-        <div class="space-y-4">
+        <div class="space-y-4" transition:slide={{ duration: 350, easing: cubicOut }}>
           <div class="rounded-lg bg-muted/40 p-5 text-center">
             <div class="text-xs uppercase tracking-widest text-muted-foreground">Frame count</div>
-            <div class="text-5xl font-semibold tabular-nums">{result.frameCount.toLocaleString()}</div>
+            <div class="text-5xl font-semibold tabular-nums">
+              {Math.round(frameTween.current).toLocaleString()}
+            </div>
             <div class="text-xs text-muted-foreground">
               {result.framesIncludingHeader.toLocaleString()} including the header frame
             </div>
