@@ -197,7 +197,13 @@ const bitrateLabel = $derived.by(() => {
           <Shield size={14} /> Privacy
         </a>
       </div>
-      <a href="https://mekyle.com" target="_blank" rel="noopener" class="transition-colors hover:text-foreground">
+      <a
+        href="https://mekyle.com"
+        target="_blank"
+        rel="noopener"
+        class="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
+      >
+        <img src="https://mekyle.com/favicon-32x32.png" alt="" width="14" height="14" class="rounded-sm" />
         Built by mekyle.com
       </a>
     </footer>
