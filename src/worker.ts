@@ -6,6 +6,7 @@
 import { docsHtml } from "./docs";
 import { type AnalyzeError, analyzeMp3, type FrameAnalysis } from "./lib/mp3/analyze";
 import { openapi } from "./openapi";
+import { privacyHtml } from "./privacy";
 
 const MAX_BYTES = 25 * 1024 * 1024; // raise toward the 100 MB Free body limit once a deploy confirms CPU (ADR 0002)
 
@@ -69,6 +70,8 @@ export default {
         return new Response(JSON.stringify(openapi), { headers: { "content-type": "application/json" } });
       case "/docs":
         return html(docsHtml);
+      case "/privacy":
+        return html(privacyHtml);
       default:
         return fail(404, "not-found", "Not found. POST an MP3 to /file-upload, or see /docs.");
     }

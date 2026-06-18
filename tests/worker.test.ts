@@ -63,3 +63,12 @@ test("GET /docs serves the API reference page", async () => {
   expect(res.headers.get("content-type")).toContain("text/html");
   expect(await res.text()).toContain("/openapi.json");
 });
+
+test("GET /privacy serves the privacy policy", async () => {
+  const res = await worker.fetch(new Request("http://localhost/privacy"));
+  expect(res.status).toBe(200);
+  expect(res.headers.get("content-type")).toContain("text/html");
+  const body = await res.text();
+  expect(body).toContain("Privacy Policy");
+  expect(body).toContain("mekyle.com");
+});

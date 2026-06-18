@@ -44,6 +44,7 @@ For UI development with hot reload, run `bun run dev:web` (Vite, proxies the API
 | `POST /file-upload` | the API — count frames in an uploaded MP3 |
 | `GET /docs` | interactive API reference (Scalar) |
 | `GET /openapi.json` | OpenAPI 3.1 spec |
+| `GET /privacy` | privacy policy (no-persistence statement) |
 
 ## API
 

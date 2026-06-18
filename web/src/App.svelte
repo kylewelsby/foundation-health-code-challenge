@@ -1,5 +1,5 @@
 <script lang="ts">
-import { AudioLines, BookOpen, Clock, FileAudio, Gauge, Radio, TriangleAlert, Upload, Waves } from "@lucide/svelte";
+import { AudioLines, BookOpen, Clock, FileAudio, Gauge, Radio, Shield, TriangleAlert, Upload, Waves } from "@lucide/svelte";
 import { cubicOut } from "svelte/easing";
 import { Tween } from "svelte/motion";
 import { fade, slide } from "svelte/transition";
@@ -182,10 +182,23 @@ const bitrateLabel = $derived.by(() => {
       {/if}
     </div>
 
-    <footer class="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-      <BookOpen size={14} />
-      <a href="/docs" class="underline underline-offset-2 transition-colors hover:text-foreground">
-        API documentation
+    <footer class="flex flex-col items-center gap-2 text-xs text-muted-foreground">
+      <div class="flex items-center gap-4">
+        <a
+          href="/docs"
+          class="inline-flex items-center gap-1.5 underline-offset-2 transition-colors hover:text-foreground hover:underline"
+        >
+          <BookOpen size={14} /> API docs
+        </a>
+        <a
+          href="/privacy"
+          class="inline-flex items-center gap-1.5 underline-offset-2 transition-colors hover:text-foreground hover:underline"
+        >
+          <Shield size={14} /> Privacy
+        </a>
+      </div>
+      <a href="https://mekyle.com" target="_blank" rel="noopener" class="transition-colors hover:text-foreground">
+        Built by mekyle.com
       </a>
     </footer>
   </div>
