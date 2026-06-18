@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Installs Bun from mise.toml — single source of truth for the toolchain version.
+      - uses: jdx/mise-action@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck (strict — enforces no `any`/`unknown`)
+        run: bun run typecheck
+
+      - name: Lint + format check (Biome)
+        run: bun run ci
+
+      - name: Tests
+        run: bun test
+
+      - name: Build for Workers (proves it deploys)
+        run: bunx wrangler deploy --dry-run
