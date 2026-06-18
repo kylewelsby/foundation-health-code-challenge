@@ -1,0 +1,5 @@
+name = "mp3-frame-analysis"
+main = "src/worker.ts"
+compatibility_date = "2026-06-01"
+
+# Pure Web APIs only (Request/Response/FormData/Uint8Array) — no nodejs_compat needed.

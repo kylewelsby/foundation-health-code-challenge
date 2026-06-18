@@ -114,10 +114,15 @@ free-format). Cross-check every count against **mediainfo** and **ffprobe**.
 
 ## 10. Build order
 
-Parser (TDD) → Vitest + fixtures + mediainfo cross-check → `/file-upload` endpoint
-→ GitHub Actions CI (`tsc`, `svelte-check`, ESLint, Prettier, Vitest, adapter build)
-→ minimal upload UI + OpenAPI → README (decisions, tradeoffs, AI-assistance note)
-→ deploy to Workers, measure CPU, finalize cap.
+Parser (TDD, `bun test`) → fixtures + mediainfo cross-check → `/file-upload` **plain
+Cloudflare Worker** (`wrangler dev`, no framework) → GitHub Actions CI (`tsc --noEmit`,
+ESLint, Prettier, `bun test`, `wrangler deploy --dry-run`) → minimal UI + OpenAPI →
+README (decisions, tradeoffs, AI-assistance note) → `wrangler deploy`, measure CPU,
+finalize cap.
+
+Stack note: the brief floated SvelteKit; the implementation is a **plain Worker** — a
+single API endpoint needs no framework, and Bun + `wrangler dev` keeps the toolchain
+minimal (no Node). A UI bonus, if built, is a static page served by the Worker.
 
 ## 11. Non-goals
 

@@ -1,6 +1,5 @@
 [tools]
 bun = "1.3"
-node = "24"
 
 [env]
-# parser core runs on Bun locally; SvelteKit/Cloudflare tooling uses the pinned Node
+# Bun-only: parser + tests run on Bun; the Worker runs on workerd via `wrangler dev`.
