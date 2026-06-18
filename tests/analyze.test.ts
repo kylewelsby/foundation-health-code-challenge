@@ -102,3 +102,12 @@ test("does not walk into an ID3v1 (128-byte TAG) trailer", () => {
   expect(r.ok).toBe(true);
   if (r.ok) expect(r.analysis.frameCount).toBe(40);
 });
+
+test("drops a truncated final frame and flags it (39 of 40)", () => {
+  const r = analyzeMp3(load("truncated.mp3"));
+  expect(r.ok).toBe(true);
+  if (r.ok) {
+    expect(r.analysis.frameCount).toBe(39);
+    expect(r.analysis.flags.truncated).toBe(true);
+  }
+});

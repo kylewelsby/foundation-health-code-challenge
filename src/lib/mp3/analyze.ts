@@ -116,10 +116,14 @@ export function analyzeMp3(bytes: Uint8Array): AnalyzeResult {
   let walked = 0;
   let bitrateSum = 0;
   let constantBitrate = true;
+  let truncated = false;
   while (true) {
     const h = parseHeader(bytes, i);
     if (h === null) break;
-    if (i + h.frameLength > bytes.length) break; // truncated final frame — not counted
+    if (i + h.frameLength > bytes.length) {
+      truncated = true; // valid header but the frame body is cut off by end-of-input
+      break;
+    }
     walked++;
     bitrateSum += h.bitrateKbps;
     if (h.bitrateKbps !== first.bitrateKbps) constantBitrate = false;
@@ -144,7 +148,7 @@ export function analyzeMp3(bytes: Uint8Array): AnalyzeResult {
       channelMode: first.channelMode,
       bitrate,
       header: tag,
-      flags: { truncated: false, corrupt: false },
+      flags: { truncated, corrupt: false },
     },
   };
 }
