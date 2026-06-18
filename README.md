@@ -137,9 +137,8 @@ builds the SPA and runs `wrangler deploy`. Two repo secrets are required
 
 To deploy manually instead: `wrangler login` then `bun run deploy` (builds + deploys).
 
-> Note: CI pins the deploy to `wrangler@3.114.17`, while local dev/build use the
-> project's `wrangler ^4`. Keep an eye on that split — if a deploy behaves oddly
-> (especially around the `[assets]` binding), align the versions.
+CI deploys with the project's locked `wrangler` (v4, from `bun.lock`) — the same
+version used for local dev and the build gate, so what's validated is what ships.
 
 ## Testing
 

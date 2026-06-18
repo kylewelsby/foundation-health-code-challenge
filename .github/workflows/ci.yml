@@ -32,9 +32,9 @@ jobs:
       - name: Build the SPA
         run: bun run build
 
-      # Validate with the SAME wrangler version that the deploy job uses.
+      # Validate with the SAME wrangler the deploy job uses (the locked v4 from node_modules).
       - name: Build for Workers (proves it deploys)
-        run: bunx --bun wrangler@3.114.17 deploy --dry-run
+        run: bunx --bun wrangler deploy --dry-run
 
   # Deploy to Cloudflare on pushes to main, only after `check` passes.
   deploy:
@@ -55,7 +55,7 @@ jobs:
         run: bun run build
 
       - name: Deploy to Cloudflare Workers
-        run: bunx --bun wrangler@3.114.17 deploy
+        run: bunx --bun wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
