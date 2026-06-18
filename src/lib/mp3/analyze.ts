@@ -4,38 +4,41 @@
  * See PRD.md and docs/adr/0001 (frameCount excludes the Xing/Info/VBRI header frame).
  */
 
-export type ChannelMode = "stereo" | "joint_stereo" | "dual_channel" | "mono";
-
-export type Bitrate =
-  | { mode: "cbr"; kbps: number }
-  | { mode: "vbr"; averageKbps: number; nominalKbps?: number };
-
-export type HeaderKind = "xing" | "info" | "vbri" | "none";
-
-export type FrameAnalysis = {
-  frameCount: number;
-  framesIncludingHeader: number;
-  durationSeconds: number;
-  sampleRate: number;
-  channelMode: ChannelMode;
-  bitrate: Bitrate;
-  header: { kind: HeaderKind; declaredFrameCount?: number };
-  flags: { truncated: boolean; corrupt: boolean };
-};
-
-export type AnalyzeErrorCode = "empty" | "not-mpeg1-layer3" | "free-format";
-
-export type AnalyzeResult =
-  | { ok: true; analysis: FrameAnalysis }
-  | { ok: false; error: { code: AnalyzeErrorCode; message: string } };
-
-// MPEG-1 Layer III lookup tables (index = header bits).
+// MPEG-1 Layer III lookup tables (index = header bits). ChannelMode is derived from
+// CHANNEL_MODES below, so the public type can never drift from the runtime table.
 const BITRATE_KBPS = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, -1] as const;
 const SAMPLE_RATE = [44100, 48000, 32000, -1] as const;
 const CHANNEL_MODES = ["stereo", "joint_stereo", "dual_channel", "mono"] as const;
 const SAMPLES_PER_FRAME = 1152;
 const MAX_FRAME_LENGTH = 1441; // 144 * 320000 / 32000 + 1 — largest MPEG-1 L3 frame
 const RESYNC_BOUND = 128 * 1024; // cap the forward scan — bounds worst-case CPU on garbage
+
+export type ChannelMode = (typeof CHANNEL_MODES)[number];
+
+export type Bitrate =
+  | { readonly mode: "cbr"; readonly kbps: number }
+  | { readonly mode: "vbr"; readonly averageKbps: number; readonly nominalKbps?: number };
+
+export type HeaderKind = "xing" | "info" | "vbri" | "none";
+
+export type FrameAnalysis = {
+  readonly frameCount: number;
+  readonly framesIncludingHeader: number;
+  readonly durationSeconds: number;
+  readonly sampleRate: number;
+  readonly channelMode: ChannelMode;
+  readonly bitrate: Bitrate;
+  readonly header: { readonly kind: HeaderKind; readonly declaredFrameCount?: number };
+  readonly flags: { readonly truncated: boolean; readonly corrupt: boolean };
+};
+
+export type AnalyzeErrorCode = "empty" | "not-mpeg1-layer3" | "free-format";
+
+export type AnalyzeError = { readonly code: AnalyzeErrorCode; readonly message: string };
+
+export type AnalyzeResult =
+  | { readonly ok: true; readonly analysis: FrameAnalysis }
+  | { readonly ok: false; readonly error: AnalyzeError };
 
 type Header = { bitrateKbps: number; sampleRate: number; channelMode: ChannelMode; frameLength: number };
 
