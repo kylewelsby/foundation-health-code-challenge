@@ -37,6 +37,14 @@ const SAMPLES_PER_FRAME = 1152;
 
 type Header = { bitrateKbps: number; sampleRate: number; channelMode: ChannelMode; frameLength: number };
 
+/** Byte offset of the first audio frame past an ID3v2 tag, or 0 if none. */
+function id3v2End(b: Uint8Array): number {
+  if (b.length < 10 || b[0] !== 0x49 || b[1] !== 0x44 || b[2] !== 0x33) return 0; // "ID3"
+  // Size is a 28-bit syncsafe integer (7 bits per byte) and excludes the 10-byte header.
+  const size = ((b[6]! & 0x7f) << 21) | ((b[7]! & 0x7f) << 14) | ((b[8]! & 0x7f) << 7) | (b[9]! & 0x7f);
+  return 10 + size;
+}
+
 /** Parse a 4-byte MPEG-1 Layer III header at `i`, or null if not a valid in-scope header. */
 function parseHeader(b: Uint8Array, i: number): Header | null {
   if (i + 4 > b.length) return null;
@@ -80,8 +88,8 @@ export function analyzeMp3(bytes: Uint8Array): AnalyzeResult {
     return { ok: false, error: { code: "empty", message: "File is empty." } };
   }
 
-  // Find the first valid in-scope frame, distinguishing free-format from non-MP3.
-  let i = 0;
+  // Skip any ID3v2 tag so the scan never takes a false sync from tag/cover-art bytes.
+  let i = id3v2End(bytes);
   let first: Header | null = null;
   for (; i + 4 <= bytes.length; i++) {
     if (bytes[i] !== 0xff || (bytes[i + 1]! & 0xe0) !== 0xe0) continue; // 11-bit sync

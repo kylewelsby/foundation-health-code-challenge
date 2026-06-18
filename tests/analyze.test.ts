@@ -81,3 +81,24 @@ test("detects CBR on a constant-bitrate file", () => {
   expect(r.ok).toBe(true);
   if (r.ok) expect(r.analysis.bitrate.mode).toBe("cbr");
 });
+
+test("skips an ID3v2 tag whose payload contains a fake frame sync", () => {
+  const r = analyzeMp3(load("id3v2_fakesync.mp3"));
+  expect(r.ok).toBe(true);
+  if (r.ok) {
+    expect(r.analysis.frameCount).toBe(40);
+    expect(r.analysis.header.kind).toBe("none");
+  }
+});
+
+test("handles a real ID3v2 tag with cover art (count unaffected)", () => {
+  const r = analyzeMp3(load("id3v2_cover.mp3"));
+  expect(r.ok).toBe(true);
+  if (r.ok) expect(r.analysis.frameCount).toBe(40);
+});
+
+test("does not walk into an ID3v1 (128-byte TAG) trailer", () => {
+  const r = analyzeMp3(load("id3v1_trailer.mp3"));
+  expect(r.ok).toBe(true);
+  if (r.ok) expect(r.analysis.frameCount).toBe(40);
+});
