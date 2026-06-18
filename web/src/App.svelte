@@ -203,7 +203,7 @@ const bitrateLabel = $derived.by(() => {
         rel="noopener"
         class="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
       >
-        <img src="https://mekyle.com/favicon-32x32.png" alt="" width="14" height="14" class="rounded-sm" />
+        <img src="/mekyle.png" alt="" width="14" height="14" class="rounded-sm" />
         Built by mekyle.com
       </a>
     </footer>
