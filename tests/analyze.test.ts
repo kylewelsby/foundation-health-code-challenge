@@ -150,3 +150,15 @@ test("reports CBR mono metadata for the no-tag fixture", () => {
     expect(r.analysis.bitrate).toEqual({ mode: "cbr", kbps: 128 });
   }
 });
+
+test("rejects out-of-scope MPEG-2 Layer III gracefully", () => {
+  const r = analyzeMp3(load("mpeg2_l3.mp3"));
+  expect(r.ok).toBe(false);
+  if (!r.ok) expect(r.error.code).toBe("not-mpeg1-layer3");
+});
+
+test("rejects out-of-scope Layer II gracefully", () => {
+  const r = analyzeMp3(load("layer2.mp3"));
+  expect(r.ok).toBe(false);
+  if (!r.ok) expect(r.error.code).toBe("not-mpeg1-layer3");
+});
