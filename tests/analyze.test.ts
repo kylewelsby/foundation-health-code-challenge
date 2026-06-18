@@ -25,3 +25,44 @@ test("counts the provided sample.mp3 as 6089 (VBR, Xing header excluded)", () =>
     expect(result.analysis.header.kind).toBe("xing");
   }
 });
+
+// CBR with a LAME "Info" header — the header frame is excluded just like Xing.
+// (We follow ffprobe = 40; mediainfo's 41 for CBR/Info is its documented quirk.)
+test("excludes the Info header frame on a CBR file (40, structural 41)", () => {
+  const result = analyzeMp3(load("cbr_1s.mp3"));
+  expect(result.ok).toBe(true);
+  if (result.ok) {
+    expect(result.analysis.frameCount).toBe(40);
+    expect(result.analysis.framesIncludingHeader).toBe(41);
+    expect(result.analysis.header.kind).toBe("info");
+  }
+});
+
+// VBR fixture: frameCount == Xing declared count (116); structural 117.
+test("counts a VBR/Xing fixture as 116 (== declared), structural 117", () => {
+  const result = analyzeMp3(load("vbr_3s.mp3"));
+  expect(result.ok).toBe(true);
+  if (result.ok) {
+    expect(result.analysis.frameCount).toBe(116);
+    expect(result.analysis.framesIncludingHeader).toBe(117);
+    expect(result.analysis.header.kind).toBe("xing");
+  }
+});
+
+test("rejects an empty file", () => {
+  const r = analyzeMp3(new Uint8Array(0));
+  expect(r.ok).toBe(false);
+  if (!r.ok) expect(r.error.code).toBe("empty");
+});
+
+test("rejects a non-MP3 (text renamed .mp3) as not-mpeg1-layer3", () => {
+  const r = analyzeMp3(new TextEncoder().encode("this is definitely not an mp3 file at all, just text"));
+  expect(r.ok).toBe(false);
+  if (!r.ok) expect(r.error.code).toBe("not-mpeg1-layer3");
+});
+
+test("rejects a free-format MP3 gracefully (bitrate index 0000)", () => {
+  const r = analyzeMp3(load("freeformat.mp3"));
+  expect(r.ok).toBe(false);
+  if (!r.ok) expect(r.error.code).toBe("free-format");
+});

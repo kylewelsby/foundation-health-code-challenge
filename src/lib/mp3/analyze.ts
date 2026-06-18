@@ -69,12 +69,22 @@ export function analyzeMp3(bytes: Uint8Array): AnalyzeResult {
     return { ok: false, error: { code: "empty", message: "File is empty." } };
   }
 
-  // Find the first valid in-scope frame.
+  // Find the first valid in-scope frame, distinguishing free-format from non-MP3.
   let i = 0;
-  let first = parseHeader(bytes, i);
-  while (first === null && i + 4 <= bytes.length) {
-    i++;
-    first = parseHeader(bytes, i);
+  let first: Header | null = null;
+  for (; i + 4 <= bytes.length; i++) {
+    if (bytes[i] !== 0xff || (bytes[i + 1]! & 0xe0) !== 0xe0) continue; // 11-bit sync
+    if (((bytes[i + 1]! >> 3) & 0x3) !== 0x3 || ((bytes[i + 1]! >> 1) & 0x3) !== 0x1) continue; // MPEG-1, Layer III
+    const bitrateIndex = (bytes[i + 2]! >> 4) & 0xf;
+    if (bitrateIndex === 0x0) {
+      return { ok: false, error: { code: "free-format", message: "Free-format MP3 is not supported." } };
+    }
+    if (bitrateIndex === 0xf) continue; // invalid bitrate ("bad") — false sync, keep scanning
+    const h = parseHeader(bytes, i);
+    if (h !== null) {
+      first = h;
+      break;
+    }
   }
   if (first === null) {
     return { ok: false, error: { code: "not-mpeg1-layer3", message: "No MPEG-1 Layer III frames found." } };
