@@ -129,3 +129,24 @@ test("resync skips false 0xFF syncs via 2-frame confirmation", () => {
     expect(r.analysis.flags.corrupt).toBe(true);
   }
 });
+
+test("reports audio-frame metadata for the sample (joint stereo, 44.1k, ~159s, VBR)", () => {
+  const r = analyzeMp3(load("sample.mp3"));
+  expect(r.ok).toBe(true);
+  if (r.ok) {
+    const a = r.analysis;
+    expect(a.sampleRate).toBe(44100);
+    expect(a.channelMode).toBe("joint_stereo"); // from an audio frame, not the Xing header frame
+    expect(a.bitrate.mode).toBe("vbr");
+    expect(a.durationSeconds).toBeCloseTo(159.06, 1);
+  }
+});
+
+test("reports CBR mono metadata for the no-tag fixture", () => {
+  const r = analyzeMp3(load("cbr_notag.mp3"));
+  expect(r.ok).toBe(true);
+  if (r.ok) {
+    expect(r.analysis.channelMode).toBe("mono");
+    expect(r.analysis.bitrate).toEqual({ mode: "cbr", kbps: 128 });
+  }
+});

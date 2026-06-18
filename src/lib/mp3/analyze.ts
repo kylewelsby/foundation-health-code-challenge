@@ -157,10 +157,12 @@ export function analyzeMp3(bytes: Uint8Array): AnalyzeResult {
   let constantBitrate = true;
   let truncated = false;
   let corrupt = false;
+  let audioHeader: Header | null = null; // first non-metadata frame — source of channel mode
   while (i + 4 <= end) {
     const h = parseHeader(bytes, i);
     if (h !== null && i + h.frameLength <= end) {
       walked++;
+      if (audioHeader === null && !(walked === 1 && tag.kind !== "none")) audioHeader = h;
       bitrateSum += h.bitrateKbps;
       if (h.bitrateKbps !== first.bitrateKbps) constantBitrate = false;
       i += h.frameLength;
@@ -194,7 +196,7 @@ export function analyzeMp3(bytes: Uint8Array): AnalyzeResult {
       framesIncludingHeader,
       durationSeconds,
       sampleRate: first.sampleRate,
-      channelMode: first.channelMode,
+      channelMode: (audioHeader ?? first).channelMode,
       bitrate,
       header: tag,
       flags: { truncated, corrupt },
