@@ -34,6 +34,8 @@ const BITRATE_KBPS = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 25
 const SAMPLE_RATE = [44100, 48000, 32000, -1] as const;
 const CHANNEL_MODES = ["stereo", "joint_stereo", "dual_channel", "mono"] as const;
 const SAMPLES_PER_FRAME = 1152;
+const MAX_FRAME_LENGTH = 1441; // 144 * 320000 / 32000 + 1 — largest MPEG-1 L3 frame
+const RESYNC_BOUND = 128 * 1024; // cap the forward scan — bounds worst-case CPU on garbage
 
 type Header = { bitrateKbps: number; sampleRate: number; channelMode: ChannelMode; frameLength: number };
 
@@ -83,6 +85,41 @@ function parseHeaderTag(
   return { kind: "none" };
 }
 
+/** End of audio data: trims a trailing 128-byte ID3v1 ("TAG") block if present. */
+function audioEnd(b: Uint8Array): number {
+  if (
+    b.length >= 128 &&
+    b[b.length - 128] === 0x54 &&
+    b[b.length - 127] === 0x41 &&
+    b[b.length - 126] === 0x47 // "TAG"
+  ) {
+    return b.length - 128;
+  }
+  return b.length;
+}
+
+/** A frame at `i` whose following frame also parses (2-frame confirmation), or null. */
+function confirmedFrameAt(b: Uint8Array, i: number, end: number): Header | null {
+  const h = parseHeader(b, i);
+  if (h === null || i + h.frameLength > end) return null;
+  const next = i + h.frameLength;
+  if (next + 4 > end) return h; // nothing after to confirm against — accept
+  return parseHeader(b, next) !== null ? h : null;
+}
+
+/** Bounded forward scan (native indexOf over 0xFF) for the next confirmed frame past garbage. */
+function resync(b: Uint8Array, from: number, end: number): number {
+  const bound = Math.min(end, from + RESYNC_BOUND);
+  let i = from + 1;
+  while (i < bound) {
+    const idx = b.indexOf(0xff, i);
+    if (idx === -1 || idx >= bound) return -1;
+    if (confirmedFrameAt(b, idx, end) !== null) return idx;
+    i = idx + 1;
+  }
+  return -1;
+}
+
 export function analyzeMp3(bytes: Uint8Array): AnalyzeResult {
   if (bytes.length === 0) {
     return { ok: false, error: { code: "empty", message: "File is empty." } };
@@ -110,24 +147,36 @@ export function analyzeMp3(bytes: Uint8Array): AnalyzeResult {
   }
 
   const tag = parseHeaderTag(bytes, i, first.frameLength);
+  const end = audioEnd(bytes);
 
   // Walk frames by hopping frameLength; count every structurally valid frame,
-  // tracking per-frame bitrates to classify CBR vs VBR.
+  // tracking per-frame bitrates to classify CBR vs VBR. On a bad header mid-stream,
+  // attempt a bounded resync; if that fails on substantial data, the stream is corrupt.
   let walked = 0;
   let bitrateSum = 0;
   let constantBitrate = true;
   let truncated = false;
-  while (true) {
+  let corrupt = false;
+  while (i + 4 <= end) {
     const h = parseHeader(bytes, i);
-    if (h === null) break;
-    if (i + h.frameLength > bytes.length) {
+    if (h !== null && i + h.frameLength <= end) {
+      walked++;
+      bitrateSum += h.bitrateKbps;
+      if (h.bitrateKbps !== first.bitrateKbps) constantBitrate = false;
+      i += h.frameLength;
+      continue;
+    }
+    if (h !== null) {
       truncated = true; // valid header but the frame body is cut off by end-of-input
       break;
     }
-    walked++;
-    bitrateSum += h.bitrateKbps;
-    if (h.bitrateKbps !== first.bitrateKbps) constantBitrate = false;
-    i += h.frameLength;
+    const next = resync(bytes, i, end);
+    if (next === -1) {
+      if (end - i >= MAX_FRAME_LENGTH) corrupt = true; // substantial unrecoverable garbage
+      break;
+    }
+    corrupt = true; // skipped a non-frame gap to the next confirmed frame
+    i = next;
   }
 
   const framesIncludingHeader = walked;
@@ -148,7 +197,7 @@ export function analyzeMp3(bytes: Uint8Array): AnalyzeResult {
       channelMode: first.channelMode,
       bitrate,
       header: tag,
-      flags: { truncated, corrupt: false },
+      flags: { truncated, corrupt },
     },
   };
 }

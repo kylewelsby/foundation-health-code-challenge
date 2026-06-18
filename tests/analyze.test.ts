@@ -111,3 +111,21 @@ test("drops a truncated final frame and flags it (39 of 40)", () => {
     expect(r.analysis.flags.truncated).toBe(true);
   }
 });
+
+test("resyncs across a garbage gap and flags corrupt", () => {
+  const r = analyzeMp3(load("corrupt_gap.mp3"));
+  expect(r.ok).toBe(true);
+  if (r.ok) {
+    expect(r.analysis.frameCount).toBe(40);
+    expect(r.analysis.flags.corrupt).toBe(true);
+  }
+});
+
+test("resync skips false 0xFF syncs via 2-frame confirmation", () => {
+  const r = analyzeMp3(load("corrupt_falsesync.mp3"));
+  expect(r.ok).toBe(true);
+  if (r.ok) {
+    expect(r.analysis.frameCount).toBe(40);
+    expect(r.analysis.flags.corrupt).toBe(true);
+  }
+});
