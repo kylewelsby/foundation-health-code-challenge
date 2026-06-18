@@ -1,0 +1,15 @@
+# dependencies
+node_modules/
+
+# build output
+.svelte-kit/
+build/
+dist/
+.wrangler/
+
+# throwaway research prototypes & generated intermediates (findings captured in docs/adr)
+_research/
+
+# misc
+.DS_Store
+*.log
