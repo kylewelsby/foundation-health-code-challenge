@@ -138,8 +138,9 @@ builds the SPA and runs `wrangler deploy`. Two repo secrets are required
 
 To deploy manually instead: `wrangler login` then `bun run deploy` (builds + deploys).
 
-CI deploys with the project's locked `wrangler` (v4, from `bun.lock`) — the same
-version used for local dev and the build gate, so what's validated is what ships.
+CI deploys via the official **`cloudflare/wrangler-action@v4`**, which auto-detects
+Bun (from `bun.lock`) and uses the project's locked `wrangler` v4 — the same version
+as local dev and the build gate, so what's validated is what ships.
 
 ## Testing
 
