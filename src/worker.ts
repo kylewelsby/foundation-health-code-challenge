@@ -3,10 +3,8 @@
  * analyzeMp3 library — all MP3 logic lives there; this file only does HTTP concerns.
  * See ADR 0002 for the 25 MB cap and the streaming/scale-out rationale.
  */
-import { docsHtml } from "./docs";
 import { type AnalyzeError, analyzeMp3, type FrameAnalysis } from "./lib/mp3/analyze";
 import { openapi } from "./openapi";
-import { privacyHtml } from "./privacy";
 
 const MAX_BYTES = 25 * 1024 * 1024; // raise toward the 100 MB Free body limit once a deploy confirms CPU (ADR 0002)
 
@@ -55,12 +53,9 @@ async function handleUpload(request: Request): Promise<Response> {
   return result.ok ? json(200, result.analysis) : json(parseErrorStatus(result.error.code), { error: result.error });
 }
 
-function html(body: string): Response {
-  return new Response(body, { headers: { "content-type": "text/html; charset=utf-8" } });
-}
-
 export default {
-  // The Svelte SPA (dist/) is served by Workers Assets; this handler owns the API routes.
+  // The SPA and static pages (/, /docs, /privacy) are served from dist/ by Workers Assets;
+  // this handler owns only the dynamic API routes.
   async fetch(request: Request): Promise<Response> {
     const { pathname } = new URL(request.url);
     switch (pathname) {
@@ -68,10 +63,6 @@ export default {
         return request.method === "POST" ? handleUpload(request) : fail(405, "method-not-allowed", "Use POST.");
       case "/openapi.json":
         return new Response(JSON.stringify(openapi), { headers: { "content-type": "application/json" } });
-      case "/docs":
-        return html(docsHtml);
-      case "/privacy":
-        return html(privacyHtml);
       default:
         return fail(404, "not-found", "Not found. POST an MP3 to /file-upload, or see /docs.");
     }

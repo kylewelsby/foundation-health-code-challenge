@@ -57,18 +57,5 @@ test("GET /openapi.json serves the OpenAPI spec", async () => {
   expect(spec.paths["/file-upload"]).toBeDefined();
 });
 
-test("GET /docs serves the API reference page", async () => {
-  const res = await worker.fetch(new Request("http://localhost/docs"));
-  expect(res.status).toBe(200);
-  expect(res.headers.get("content-type")).toContain("text/html");
-  expect(await res.text()).toContain("/openapi.json");
-});
-
-test("GET /privacy serves the privacy policy", async () => {
-  const res = await worker.fetch(new Request("http://localhost/privacy"));
-  expect(res.status).toBe(200);
-  expect(res.headers.get("content-type")).toContain("text/html");
-  const body = await res.text();
-  expect(body).toContain("Privacy Policy");
-  expect(body).toContain("mekyle.com");
-});
+// /docs and /privacy are static files in dist/, served by Workers Assets (not the Worker) —
+// covered by the build + the wrangler-dev integration check rather than a Worker unit test.
