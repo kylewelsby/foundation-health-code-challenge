@@ -50,19 +50,27 @@ function id3v2End(b: Uint8Array): number {
   return 10 + size;
 }
 
-/** Parse a 4-byte MPEG-1 Layer III header at `i`, or null if not a valid in-scope header. */
-function parseHeader(b: Uint8Array, i: number): Header | null {
-  if (i + 4 > b.length) return null;
-  if (b[i] !== 0xff || (b[i + 1]! & 0xe0) !== 0xe0) return null; // 11-bit sync
-  if (((b[i + 1]! >> 3) & 0x3) !== 0x3) return null; // version must be MPEG-1 (11)
-  if (((b[i + 1]! >> 1) & 0x3) !== 0x1) return null; // layer must be III (01)
-  const bitrateKbps = BITRATE_KBPS[(b[i + 2]! >> 4) & 0xf]!;
+// The three honest outcomes of looking at 4 bytes — so callers never have to
+// re-derive "was that null a free-format frame or just noise?".
+type HeaderScan = { status: "frame"; header: Header } | { status: "free-format" } | { status: "none" };
+const NONE: HeaderScan = { status: "none" };
+const FREE_FORMAT: HeaderScan = { status: "free-format" };
+
+/** Classify the 4 bytes at `i` as a MPEG-1 Layer III frame, a free-format frame, or not a frame. */
+function scanHeader(b: Uint8Array, i: number): HeaderScan {
+  if (i + 4 > b.length) return NONE;
+  if (b[i] !== 0xff || (b[i + 1]! & 0xe0) !== 0xe0) return NONE; // 11-bit sync
+  if (((b[i + 1]! >> 3) & 0x3) !== 0x3 || ((b[i + 1]! >> 1) & 0x3) !== 0x1) return NONE; // MPEG-1, Layer III
   const sampleRate = SAMPLE_RATE[(b[i + 2]! >> 2) & 0x3]!;
-  if (bitrateKbps <= 0 || sampleRate <= 0) return null; // free-format / invalid handled elsewhere
+  if (sampleRate <= 0) return NONE; // reserved sample rate
+  const bitrateIndex = (b[i + 2]! >> 4) & 0xf;
+  if (bitrateIndex === 0x0) return FREE_FORMAT; // bitrate index 0000
+  if (bitrateIndex === 0xf) return NONE; // bitrate index 1111 ("bad")
+  const bitrateKbps = BITRATE_KBPS[bitrateIndex]!;
   const padding = (b[i + 2]! >> 1) & 0x1;
   const channelMode = CHANNEL_MODES[(b[i + 3]! >> 6) & 0x3]!;
   const frameLength = Math.floor((144 * bitrateKbps * 1000) / sampleRate) + padding;
-  return { bitrateKbps, sampleRate, channelMode, frameLength };
+  return { status: "frame", header: { bitrateKbps, sampleRate, channelMode, frameLength } };
 }
 
 /** Parse a Xing/Info/VBRI metadata block in the first frame, if present. */
@@ -101,13 +109,12 @@ function audioEnd(b: Uint8Array): number {
   return b.length;
 }
 
-/** A frame at `i` whose following frame also parses (2-frame confirmation), or null. */
-function confirmedFrameAt(b: Uint8Array, i: number, end: number): Header | null {
-  const h = parseHeader(b, i);
-  if (h === null || i + h.frameLength > end) return null;
-  const next = i + h.frameLength;
-  if (next + 4 > end) return h; // nothing after to confirm against — accept
-  return parseHeader(b, next) !== null ? h : null;
+/** A frame at `i` whose following frame also parses (2-frame confirmation guards false syncs). */
+function isConfirmedFrame(b: Uint8Array, i: number, end: number): boolean {
+  const scan = scanHeader(b, i);
+  if (scan.status !== "frame" || i + scan.header.frameLength > end) return false;
+  const next = i + scan.header.frameLength;
+  return next + 4 > end || scanHeader(b, next).status === "frame"; // nothing after => accept
 }
 
 /** Bounded forward scan (native indexOf over 0xFF) for the next confirmed frame past garbage. */
@@ -117,7 +124,7 @@ function resync(b: Uint8Array, from: number, end: number): number {
   while (i < bound) {
     const idx = b.indexOf(0xff, i);
     if (idx === -1 || idx >= bound) return -1;
-    if (confirmedFrameAt(b, idx, end) !== null) return idx;
+    if (isConfirmedFrame(b, idx, end)) return idx;
     i = idx + 1;
   }
   return -1;
@@ -128,20 +135,17 @@ export function analyzeMp3(bytes: Uint8Array): AnalyzeResult {
     return { ok: false, error: { code: "empty", message: "File is empty." } };
   }
 
-  // Skip any ID3v2 tag so the scan never takes a false sync from tag/cover-art bytes.
+  // Skip any ID3v2 tag (so cover-art bytes can't false-sync), then find the first frame,
+  // classifying free-format vs non-MP3 along the way.
   let i = id3v2End(bytes);
   let first: Header | null = null;
   for (; i + 4 <= bytes.length; i++) {
-    if (bytes[i] !== 0xff || (bytes[i + 1]! & 0xe0) !== 0xe0) continue; // 11-bit sync
-    if (((bytes[i + 1]! >> 3) & 0x3) !== 0x3 || ((bytes[i + 1]! >> 1) & 0x3) !== 0x1) continue; // MPEG-1, Layer III
-    const bitrateIndex = (bytes[i + 2]! >> 4) & 0xf;
-    if (bitrateIndex === 0x0) {
+    const scan = scanHeader(bytes, i);
+    if (scan.status === "free-format") {
       return { ok: false, error: { code: "free-format", message: "Free-format MP3 is not supported." } };
     }
-    if (bitrateIndex === 0xf) continue; // invalid bitrate ("bad") — false sync, keep scanning
-    const h = parseHeader(bytes, i);
-    if (h !== null) {
-      first = h;
+    if (scan.status === "frame") {
+      first = scan.header;
       break;
     }
   }
@@ -149,31 +153,37 @@ export function analyzeMp3(bytes: Uint8Array): AnalyzeResult {
     return { ok: false, error: { code: "not-mpeg1-layer3", message: "No MPEG-1 Layer III frames found." } };
   }
 
-  const tag = parseHeaderTag(bytes, i, first.frameLength);
+  const firstOffset = i;
+  const tag = parseHeaderTag(bytes, firstOffset, first.frameLength);
   const end = audioEnd(bytes);
 
-  // Walk frames by hopping frameLength; count every structurally valid frame,
-  // tracking per-frame bitrates to classify CBR vs VBR. On a bad header mid-stream,
-  // attempt a bounded resync; if that fails on substantial data, the stream is corrupt.
+  // Channel mode comes from an audio frame, not the header frame: a Xing/Info frame is
+  // often plain stereo even when the audio is joint stereo. Read the frame after the header.
+  let channelMode = first.channelMode;
+  if (tag.kind !== "none") {
+    const afterHeader = scanHeader(bytes, firstOffset + first.frameLength);
+    if (afterHeader.status === "frame") channelMode = afterHeader.header.channelMode;
+  }
+
+  // Hop frame-by-frame, counting and classifying CBR/VBR. A bad header triggers a bounded
+  // resync; substantial unrecoverable garbage marks the stream corrupt.
   let walked = 0;
   let bitrateSum = 0;
   let constantBitrate = true;
   let truncated = false;
   let corrupt = false;
-  let audioHeader: Header | null = null; // first non-metadata frame — source of channel mode
   while (i + 4 <= end) {
-    const h = parseHeader(bytes, i);
-    if (h !== null && i + h.frameLength <= end) {
+    const scan = scanHeader(bytes, i);
+    if (scan.status === "frame") {
+      if (i + scan.header.frameLength > end) {
+        truncated = true; // valid header but the frame body is cut off by end-of-input
+        break;
+      }
       walked++;
-      if (audioHeader === null && !(walked === 1 && tag.kind !== "none")) audioHeader = h;
-      bitrateSum += h.bitrateKbps;
-      if (h.bitrateKbps !== first.bitrateKbps) constantBitrate = false;
-      i += h.frameLength;
+      bitrateSum += scan.header.bitrateKbps;
+      if (scan.header.bitrateKbps !== first.bitrateKbps) constantBitrate = false;
+      i += scan.header.frameLength;
       continue;
-    }
-    if (h !== null) {
-      truncated = true; // valid header but the frame body is cut off by end-of-input
-      break;
     }
     const next = resync(bytes, i, end);
     if (next === -1) {
@@ -184,23 +194,19 @@ export function analyzeMp3(bytes: Uint8Array): AnalyzeResult {
     i = next;
   }
 
-  const framesIncludingHeader = walked;
   const frameCount = tag.kind === "none" ? walked : walked - 1;
-  const durationSeconds = (frameCount * SAMPLES_PER_FRAME) / first.sampleRate;
-  // Equal frame duration (1152 samples) => the time-average bitrate is the mean of per-frame bitrates.
-  const bitrate: Bitrate = constantBitrate
-    ? { mode: "cbr", kbps: first.bitrateKbps }
-    : { mode: "vbr", averageKbps: Math.round(bitrateSum / walked) };
-
   return {
     ok: true,
     analysis: {
       frameCount,
-      framesIncludingHeader,
-      durationSeconds,
+      framesIncludingHeader: walked,
+      // Equal frame duration (1152 samples) => time-average bitrate is the mean of frame bitrates.
+      durationSeconds: (frameCount * SAMPLES_PER_FRAME) / first.sampleRate,
       sampleRate: first.sampleRate,
-      channelMode: (audioHeader ?? first).channelMode,
-      bitrate,
+      channelMode,
+      bitrate: constantBitrate
+        ? { mode: "cbr", kbps: first.bitrateKbps }
+        : { mode: "vbr", averageKbps: Math.round(bitrateSum / walked) },
       header: tag,
       flags: { truncated, corrupt },
     },
