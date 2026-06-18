@@ -3,7 +3,7 @@
  * analyzeMp3 library — all MP3 logic lives there; this file only does HTTP concerns.
  * See ADR 0002 for the 25 MB cap and the streaming/scale-out rationale.
  */
-import { analyzeMp3, type AnalyzeError, type FrameAnalysis } from "./lib/mp3/analyze";
+import { type AnalyzeError, analyzeMp3, type FrameAnalysis } from "./lib/mp3/analyze";
 
 const MAX_BYTES = 25 * 1024 * 1024; // raise toward the 100 MB Free body limit once a deploy confirms CPU (ADR 0002)
 
