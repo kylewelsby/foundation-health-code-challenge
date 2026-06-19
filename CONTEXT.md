@@ -41,6 +41,19 @@ in fractional seconds (ms precision, never whole-second rounded). Approximate �
 runs ~tens of ms longer than Gapless duration. Returned as `durationSeconds`.
 _Avoid_: length, runtime
 
+**Playback frame**:
+The audio frame the playhead is currently positioned at during playback. Ranges
+from 0 (before the first audio frame) up to **Frame count** (end of the last
+audio frame). Distinct from Frame count, which is the total number of audio
+frames in the file.
+_Avoid_: current frame count (it is not a count)
+
+**Elapsed duration**:
+The decoded-sample playback position at the current **Playback frame**:
+`playbackFrame × 1152 / sampleRate`. Shown while the audio is playing or while
+the scrub handle is being dragged; otherwise the UI shows the full **Duration**.
+_Avoid_: current duration (vague — current total? current position?)
+
 **Gapless duration**:
 The sample-exact playback length, with encoder delay and padding (from the LAME
 tag) removed — what ffmpeg reports. A media-player concern (seamless track
