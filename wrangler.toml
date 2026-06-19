@@ -4,6 +4,11 @@ compatibility_date = "2026-06-01"
 
 # Pure Web APIs only (Request/Response/FormData/Uint8Array) — no nodejs_compat needed.
 
+# Serve the application on mp3-frame-analysis.mekyle.com.
+routes = [
+  { pattern = "mp3-frame-analysis.mekyle.com", custom_domain = true }
+]
+
 # The Svelte SPA (built to dist/) is served as static assets; non-asset routes hit the Worker.
 [assets]
 directory = "./dist"
