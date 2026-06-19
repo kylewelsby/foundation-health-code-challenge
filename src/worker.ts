@@ -1,7 +1,7 @@
 /**
  * Cloudflare Worker exposing POST /file-upload. A thin HTTP adapter over the pure
  * analyzeMp3 library — all MP3 logic lives there; this file only does HTTP concerns.
- * See ADR 0002 for the 25 MB cap and the streaming/scale-out rationale.
+ * See ADR 0002 / ADR 0003 for the cap and scale-out rationale.
  */
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL, PROCESSING_BUDGET_MS } from "./lib/limits";
 import { type AnalyzeError, analyzeMp3, type FrameAnalysis } from "./lib/mp3/analyze";

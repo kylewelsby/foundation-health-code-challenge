@@ -64,6 +64,11 @@ type HeaderScan = { status: "frame"; header: Header } | { status: "free-format" 
 const NONE: HeaderScan = { status: "none" };
 const FREE_FORMAT: HeaderScan = { status: "free-format" };
 
+/** Cheap periodic deadline check; `counter` is incremented by the caller. */
+function deadlineExceeded(deadline: number | undefined, counter: number, interval: number): boolean {
+  return deadline !== undefined && counter % interval === 0 && Date.now() > deadline;
+}
+
 /** Classify the 4 bytes at `i` as a MPEG-1 Layer III frame, a free-format frame, or not a frame. */
 function scanHeader(b: Uint8Array, i: number): HeaderScan {
   if (i + 4 > b.length) return NONE;
@@ -151,7 +156,7 @@ export function analyzeMp3(bytes: Uint8Array, options: AnalyzeOptions = {}): Ana
   let firstOffset = -1;
   let scans = 0;
   for (let idx = bytes.indexOf(0xff, id3v2End(bytes)); idx !== -1; idx = bytes.indexOf(0xff, idx + 1)) {
-    if (deadline !== undefined && (scans++ & 0x3fff) === 0 && Date.now() > deadline) return TIMEOUT;
+    if (deadlineExceeded(deadline, scans++, 16384)) return TIMEOUT;
     const scan = scanHeader(bytes, idx);
     if (scan.status === "free-format") {
       return { ok: false, error: { code: "free-format", message: "Free-format MP3 is not supported." } };
@@ -186,7 +191,7 @@ export function analyzeMp3(bytes: Uint8Array, options: AnalyzeOptions = {}): Ana
   let corrupt = false;
   let iterations = 0;
   while (i + 4 <= end) {
-    if (deadline !== undefined && (iterations++ & 0x1fff) === 0 && Date.now() > deadline) return TIMEOUT;
+    if (deadlineExceeded(deadline, iterations++, 8192)) return TIMEOUT;
     const scan = scanHeader(bytes, i);
     if (scan.status === "frame") {
       if (i + scan.header.frameLength > end) {
