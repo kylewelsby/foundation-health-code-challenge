@@ -1,8 +1,9 @@
 # MP3 Frame Analysis
 
-An HTTP API that accepts an MP3 upload and returns the number of **MPEG-1 Audio
-Layer III** frames in it, plus bonus metadata. The frame parser is hand-written
-(no MP3-parsing dependency), pure, and fully typed.
+An HTTP API and Svelte web UI that accept an MP3 upload and return the number of
+**MPEG-1 Audio Layer III** frames in it, plus bonus metadata. The frame parser is
+hand-written (no MP3-parsing dependency), pure, and fully typed. The UI also previews
+the uploaded file with a scrubbable audio player that shows the current playback frame.
 
 ```bash
 curl -X POST -F "file=@tests/fixtures/sample.mp3" http://localhost:8787/file-upload
@@ -35,6 +36,13 @@ curl -X POST -F "file=@tests/fixtures/sample.mp3" http://localhost:8787/file-upl
 
 Interactive API reference (Scalar) is at **`/docs`**; the raw spec at **`/openapi.json`**.
 For UI development with hot reload, run `bun run dev:web` (Vite, proxies the API to `wrangler dev`).
+
+## Web UI
+
+The home page is a drag-and-drop upload UI. It shows client-side size validation,
+an upload progress bar, the analyzed frame count, and — after a successful upload —
+a player with a scrub bar that displays the current **playback frame** and elapsed
+duration while the audio is playing or scrubbing.
 
 ## Routes
 
@@ -72,7 +80,7 @@ Multipart form upload; the MP3 must be sent as the **`file`** field.
 | Status | When |
 | ------ | ---- |
 | `400` | no `file` field · empty file · body isn't multipart |
-| `413` | upload exceeds the 25 MB limit |
+| `413` | upload exceeds the 100 MB limit |
 | `415` | not MPEG-1 Layer III (wrong MPEG version/layer, free-format, or not an MP3) |
 | `405` | method isn't `POST` |
 | `404` | path isn't `/file-upload` |
@@ -107,10 +115,11 @@ tool disagreement on CBR files, is in
 - **Cloudflare Workers Free.** Near-zero cost, no cold starts, single-command deploy.
   Constraints (128 MB memory, 10 ms CPU, 100 MB body) and the scale-out ladder are in
   [ADR 0002](docs/adr/0002-workers-free-stream-hop-and-scale-ladder.md).
-- **25 MB upload cap → `413`.** Unbounded input is a vulnerability; the cap is a
-  deliberate guard. It's the figure defensible without deploying — the parser's CPU is
-  dominated by *ingesting* bytes, not parsing, and whether workerd charges body-read to
-  the 10 ms budget needs a deployed CPU metric to confirm before raising toward 100 MB.
+- **100 MB upload cap → `413`.** The cap matches the Cloudflare Workers Free request-body
+  limit. A 5 s in-isolate parsing budget provides a graceful 503 backstop for pathological
+  streams. See [ADR 0002](docs/adr/0002-workers-free-stream-hop-and-scale-ladder.md) and
+  [ADR 0003](docs/adr/0003-raise-upload-cap-and-add-processing-budget.md) for the ladder
+  and the cap-raise rationale.
 - **No persistence.** Uploaded audio is parsed in memory and discarded — storing it
   would raise copyright/legal questions for no benefit to a stateless analyzer.
 - **Superset response.** Returning metadata alongside `frameCount` shows range while
@@ -129,7 +138,9 @@ R2 + async → Cloudflare Containers → plan bump. See ADR 0002.
 ## Deployment
 
 CI deploys to Cloudflare Workers on every push to `main` (after the checks pass) — it
-builds the SPA and runs `wrangler deploy`. Two repo secrets are required
+builds the SPA and runs `wrangler deploy`. The production Worker is served from
+**https://mp3-frame-analysis.mekyle.com** (configured as a custom domain in
+`wrangler.toml`). Two repo secrets are required
 (**Settings → Secrets and variables → Actions**):
 
 - `CLOUDFLARE_API_TOKEN` — an API token with the **Edit Cloudflare Workers** template
