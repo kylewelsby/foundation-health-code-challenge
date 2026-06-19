@@ -5,6 +5,8 @@ An HTTP API and Svelte web UI that accept an MP3 upload and return the number of
 hand-written (no MP3-parsing dependency), pure, and fully typed. The UI also previews
 the uploaded file with a scrubbable audio player that shows the current playback frame.
 
+![MP3 Frame Analysis app screenshot](web/public/app-screenshot.png)
+
 ```bash
 curl -X POST -F "file=@tests/fixtures/sample.mp3" http://localhost:8787/file-upload
 # {"frameCount":6089, ...}
