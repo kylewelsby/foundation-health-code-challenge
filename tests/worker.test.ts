@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "../src/lib/limits";
-import worker from "../src/worker";
+import { createWorker } from "../src/worker";
+
+const worker = createWorker();
 
 type FrameBody = { frameCount: number };
 type ErrorBody = { error: { code: string; message: string } };
@@ -57,6 +59,21 @@ test("GET /openapi.json serves the OpenAPI spec", async () => {
   const spec = (await res.json()) as { openapi: string; paths: Record<string, unknown> };
   expect(spec.openapi).toBe("3.1.0");
   expect(spec.paths["/file-upload"]).toBeDefined();
+});
+
+test("empty file upload -> 400", async () => {
+  const res = await worker.fetch(uploadOf(new Uint8Array(0)));
+  expect(res.status).toBe(400);
+  expect(((await res.json()) as ErrorBody).error.code).toBe("empty");
+});
+
+test("pathological stream with zero budget -> 503 timeout", async () => {
+  // 100 KiB of 0xFF bytes forces many sync scans (>16384) before a frame is found,
+  // triggering the deadline check with a budget of 0 ms.
+  const fastWorker = createWorker(0);
+  const res = await fastWorker.fetch(uploadOf(new Uint8Array(100 * 1024).fill(0xff), "noise.mp3"));
+  expect(res.status).toBe(503);
+  expect(((await res.json()) as ErrorBody).error.code).toBe("timeout");
 });
 
 // /docs and /privacy are static files in dist/, served by Workers Assets (not the Worker) —

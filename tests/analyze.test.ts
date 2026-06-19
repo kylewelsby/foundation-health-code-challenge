@@ -179,3 +179,53 @@ test("rejects out-of-scope Layer II gracefully", () => {
   expect(r.ok).toBe(false);
   if (!r.ok) expect(r.error.code).toBe("not-mpeg1-layer3");
 });
+
+// Build a minimal valid MPEG-1 Layer III frame (128 kbps, 44.1 kHz, stereo, no padding).
+// Frame body is zeros; this is enough for the parser to sync and hop.
+function makeFrame(): Uint8Array {
+  const frameLength = Math.floor((144 * 128 * 1000) / 44100); // 417
+  const frame = new Uint8Array(frameLength);
+  frame[0] = 0xff; // sync
+  frame[1] = 0xfb; // MPEG-1, Layer III
+  frame[2] = 0x90; // 128 kbps, 44.1 kHz, no padding
+  frame[3] = 0x00; // stereo
+  return frame;
+}
+
+function concat(parts: Uint8Array[]): Uint8Array {
+  const total = parts.reduce((sum, p) => sum + p.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const p of parts) {
+    out.set(p, offset);
+    offset += p.length;
+  }
+  return out;
+}
+
+test("flags corrupt when resync fails over substantial garbage", () => {
+  const frame = makeFrame();
+  // Valid frame, then 1500 zero bytes (no 0xFF at all, so resync returns -1 immediately).
+  // The remaining gap exceeds MAX_FRAME_LENGTH, so the stream is marked corrupt.
+  const garbage = new Uint8Array(1500).fill(0x00);
+  const r = analyzeMp3(concat([frame, garbage]));
+  expect(r.ok).toBe(true);
+  if (r.ok) {
+    expect(r.analysis.frameCount).toBe(1);
+    expect(r.analysis.flags.corrupt).toBe(true);
+    expect(r.analysis.flags.truncated).toBe(false);
+  }
+});
+
+test("flags corrupt when resync bound is exceeded by 0xFF garbage", () => {
+  const frame = makeFrame();
+  // Valid frame, then 130 KiB of 0xFF bytes. resync scans up to its 128 KiB bound
+  // without finding a confirmed frame, returns -1, and the leftover gap is substantial.
+  const garbage = new Uint8Array(130 * 1024).fill(0xff);
+  const r = analyzeMp3(concat([frame, garbage]));
+  expect(r.ok).toBe(true);
+  if (r.ok) {
+    expect(r.analysis.frameCount).toBe(1);
+    expect(r.analysis.flags.corrupt).toBe(true);
+  }
+});

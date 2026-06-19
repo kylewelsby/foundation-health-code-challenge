@@ -33,42 +33,47 @@ function parseErrorStatus(code: AnalyzeError["code"]): number {
   }
 }
 
-async function handleUpload(request: Request): Promise<Response> {
-  const declaredLength = Number(request.headers.get("content-length") ?? "0");
-  if (declaredLength > MAX_UPLOAD_BYTES) return fail(413, "too-large", `Upload exceeds the ${MAX_UPLOAD_LABEL} limit.`);
+export function createWorker(processingBudgetMs = PROCESSING_BUDGET_MS) {
+  async function handleUpload(request: Request): Promise<Response> {
+    const declaredLength = Number(request.headers.get("content-length") ?? "0");
+    if (declaredLength > MAX_UPLOAD_BYTES)
+      return fail(413, "too-large", `Upload exceeds the ${MAX_UPLOAD_LABEL} limit.`);
 
-  let form: FormData;
-  try {
-    form = await request.formData();
-  } catch {
-    return fail(400, "not-multipart", "Expected a multipart/form-data upload.");
+    let form: FormData;
+    try {
+      form = await request.formData();
+    } catch {
+      return fail(400, "not-multipart", "Expected a multipart/form-data upload.");
+    }
+
+    const field = form.get("file");
+    if (field === null || typeof field === "string") {
+      return fail(400, "no-file", "No file found in the upload (send it as a 'file' field).");
+    }
+    if (field.size > MAX_UPLOAD_BYTES) return fail(413, "too-large", `Upload exceeds the ${MAX_UPLOAD_LABEL} limit.`);
+
+    // Bound parsing with a deadline so a pathological stream degrades to a clean 503 rather
+    // than spinning. The platform's CPU limit still governs the largest files (see ADR 0003).
+    const bytes = new Uint8Array(await field.arrayBuffer());
+    const result = analyzeMp3(bytes, { deadline: Date.now() + processingBudgetMs });
+    return result.ok ? json(200, result.analysis) : json(parseErrorStatus(result.error.code), { error: result.error });
   }
 
-  const field = form.get("file");
-  if (field === null || typeof field === "string") {
-    return fail(400, "no-file", "No file found in the upload (send it as a 'file' field).");
-  }
-  if (field.size > MAX_UPLOAD_BYTES) return fail(413, "too-large", `Upload exceeds the ${MAX_UPLOAD_LABEL} limit.`);
-
-  // Bound parsing with a deadline so a pathological stream degrades to a clean 503 rather
-  // than spinning. The platform's CPU limit still governs the largest files (see ADR 0003).
-  const bytes = new Uint8Array(await field.arrayBuffer());
-  const result = analyzeMp3(bytes, { deadline: Date.now() + PROCESSING_BUDGET_MS });
-  return result.ok ? json(200, result.analysis) : json(parseErrorStatus(result.error.code), { error: result.error });
+  return {
+    // The SPA and static pages (/, /docs, /privacy) are served from dist/ by Workers Assets;
+    // this handler owns only the dynamic API routes.
+    async fetch(request: Request): Promise<Response> {
+      const { pathname } = new URL(request.url);
+      switch (pathname) {
+        case "/file-upload":
+          return request.method === "POST" ? handleUpload(request) : fail(405, "method-not-allowed", "Use POST.");
+        case "/openapi.json":
+          return new Response(JSON.stringify(openapi), { headers: { "content-type": "application/json" } });
+        default:
+          return fail(404, "not-found", "Not found. POST an MP3 to /file-upload, or see /docs.");
+      }
+    },
+  };
 }
 
-export default {
-  // The SPA and static pages (/, /docs, /privacy) are served from dist/ by Workers Assets;
-  // this handler owns only the dynamic API routes.
-  async fetch(request: Request): Promise<Response> {
-    const { pathname } = new URL(request.url);
-    switch (pathname) {
-      case "/file-upload":
-        return request.method === "POST" ? handleUpload(request) : fail(405, "method-not-allowed", "Use POST.");
-      case "/openapi.json":
-        return new Response(JSON.stringify(openapi), { headers: { "content-type": "application/json" } });
-      default:
-        return fail(404, "not-found", "Not found. POST an MP3 to /file-upload, or see /docs.");
-    }
-  },
-};
+export default createWorker();
