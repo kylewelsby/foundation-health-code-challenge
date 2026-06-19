@@ -1,3 +1,5 @@
+import { MAX_UPLOAD_LABEL } from "./lib/limits";
+
 /** OpenAPI 3.1 description of the API, served at GET /openapi.json and rendered at /docs. */
 export const openapi = {
   openapi: "3.1.0",
@@ -12,7 +14,7 @@ export const openapi = {
     "/file-upload": {
       post: {
         summary: "Count the frames in an MP3",
-        description: "Multipart upload; send the MP3 as the `file` field. Max 25 MB.",
+        description: `Multipart upload; send the MP3 as the \`file\` field. Max ${MAX_UPLOAD_LABEL}.`,
         requestBody: {
           required: true,
           content: {
@@ -30,23 +32,23 @@ export const openapi = {
             description: "Frame analysis",
             content: { "application/json": { schema: { $ref: "#/components/schemas/FrameAnalysis" } } },
           },
-          "400": { description: "No file, empty file, or non-multipart body", $ref: "#/components/responses/Error" },
-          "413": { description: "Upload exceeds the 25 MB limit", $ref: "#/components/responses/Error" },
+          "400": {
+            description: "No file, empty file, or non-multipart body",
+            content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+          },
+          "413": {
+            description: `Upload exceeds the ${MAX_UPLOAD_LABEL} limit`,
+            content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+          },
           "415": {
             description: "Not MPEG-1 Layer III (wrong version/layer, free-format, or not an MP3)",
-            $ref: "#/components/responses/Error",
+            content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
           },
         },
       },
     },
   },
   components: {
-    responses: {
-      Error: {
-        description: "Error",
-        content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
-      },
-    },
     schemas: {
       FrameAnalysis: {
         type: "object",
@@ -79,7 +81,6 @@ export const openapi = {
                 properties: {
                   mode: { const: "vbr" },
                   averageKbps: { type: "integer" },
-                  nominalKbps: { type: "integer" },
                 },
               },
             ],

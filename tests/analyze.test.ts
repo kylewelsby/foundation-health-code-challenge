@@ -151,6 +151,23 @@ test("reports CBR mono metadata for the no-tag fixture", () => {
   }
 });
 
+// A header-only VBR stream whose single (header) frame is truncated: parseHeaderTag still
+// sees "Xing", but the frame body is cut off, so walked == 0. frameCount must clamp to 0,
+// never -1 (regression guard for the header-frame subtraction).
+test("clamps frameCount to 0 when the only frame is a truncated header frame", () => {
+  // Valid MPEG-1 L3 header (0xFFFB, 128 kbps / 44.1 kHz => 417-byte frame), then ASCII
+  // "Xing" with empty flags, then nothing — 12 bytes total, far short of one frame.
+  const bytes = new Uint8Array([0xff, 0xfb, 0x90, 0x00, 0x58, 0x69, 0x6e, 0x67, 0x00, 0x00, 0x00, 0x00]);
+  const r = analyzeMp3(bytes);
+  expect(r.ok).toBe(true);
+  if (r.ok) {
+    expect(r.analysis.header.kind).toBe("xing");
+    expect(r.analysis.framesIncludingHeader).toBe(0);
+    expect(r.analysis.frameCount).toBe(0);
+    expect(r.analysis.flags.truncated).toBe(true);
+  }
+});
+
 test("rejects out-of-scope MPEG-2 Layer III gracefully", () => {
   const r = analyzeMp3(load("mpeg2_l3.mp3"));
   expect(r.ok).toBe(false);

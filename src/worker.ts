@@ -3,10 +3,9 @@
  * analyzeMp3 library — all MP3 logic lives there; this file only does HTTP concerns.
  * See ADR 0002 for the 25 MB cap and the streaming/scale-out rationale.
  */
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL, PROCESSING_BUDGET_MS } from "./lib/limits";
 import { type AnalyzeError, analyzeMp3, type FrameAnalysis } from "./lib/mp3/analyze";
 import { openapi } from "./openapi";
-
-const MAX_BYTES = 25 * 1024 * 1024; // raise toward the 100 MB Free body limit once a deploy confirms CPU (ADR 0002)
 
 type ErrorBody = { error: { code: string; message: string } };
 
@@ -25,6 +24,8 @@ function parseErrorStatus(code: AnalyzeError["code"]): number {
     case "not-mpeg1-layer3":
     case "free-format":
       return 415; // Unsupported Media Type
+    case "timeout":
+      return 503; // Service Unavailable — couldn't finish within the processing budget
     default: {
       const unhandled: never = code;
       return unhandled;
@@ -34,7 +35,7 @@ function parseErrorStatus(code: AnalyzeError["code"]): number {
 
 async function handleUpload(request: Request): Promise<Response> {
   const declaredLength = Number(request.headers.get("content-length") ?? "0");
-  if (declaredLength > MAX_BYTES) return fail(413, "too-large", `Upload exceeds the ${MAX_BYTES}-byte limit.`);
+  if (declaredLength > MAX_UPLOAD_BYTES) return fail(413, "too-large", `Upload exceeds the ${MAX_UPLOAD_LABEL} limit.`);
 
   let form: FormData;
   try {
@@ -47,9 +48,12 @@ async function handleUpload(request: Request): Promise<Response> {
   if (field === null || typeof field === "string") {
     return fail(400, "no-file", "No file found in the upload (send it as a 'file' field).");
   }
-  if (field.size > MAX_BYTES) return fail(413, "too-large", `Upload exceeds the ${MAX_BYTES}-byte limit.`);
+  if (field.size > MAX_UPLOAD_BYTES) return fail(413, "too-large", `Upload exceeds the ${MAX_UPLOAD_LABEL} limit.`);
 
-  const result = analyzeMp3(new Uint8Array(await field.arrayBuffer()));
+  // Bound parsing with a deadline so a pathological stream degrades to a clean 503 rather
+  // than spinning. The platform's CPU limit still governs the largest files (see ADR 0003).
+  const bytes = new Uint8Array(await field.arrayBuffer());
+  const result = analyzeMp3(bytes, { deadline: Date.now() + PROCESSING_BUDGET_MS });
   return result.ok ? json(200, result.analysis) : json(parseErrorStatus(result.error.code), { error: result.error });
 }
 

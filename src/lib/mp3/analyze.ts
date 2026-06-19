@@ -17,7 +17,7 @@ export type ChannelMode = (typeof CHANNEL_MODES)[number];
 
 export type Bitrate =
   | { readonly mode: "cbr"; readonly kbps: number }
-  | { readonly mode: "vbr"; readonly averageKbps: number; readonly nominalKbps?: number };
+  | { readonly mode: "vbr"; readonly averageKbps: number };
 
 export type HeaderKind = "xing" | "info" | "vbri" | "none";
 
@@ -32,13 +32,21 @@ export type FrameAnalysis = {
   readonly flags: { readonly truncated: boolean; readonly corrupt: boolean };
 };
 
-export type AnalyzeErrorCode = "empty" | "not-mpeg1-layer3" | "free-format";
+export type AnalyzeErrorCode = "empty" | "not-mpeg1-layer3" | "free-format" | "timeout";
 
 export type AnalyzeError = { readonly code: AnalyzeErrorCode; readonly message: string };
 
 export type AnalyzeResult =
   | { readonly ok: true; readonly analysis: FrameAnalysis }
   | { readonly ok: false; readonly error: AnalyzeError };
+
+/** Parse options. `deadline` is an absolute `Date.now()` ms after which parsing aborts gracefully. */
+export type AnalyzeOptions = { readonly deadline?: number };
+
+const TIMEOUT: AnalyzeResult = {
+  ok: false,
+  error: { code: "timeout", message: "File too large to count within the time budget." },
+};
 
 type Header = { bitrateKbps: number; sampleRate: number; channelMode: ChannelMode; frameLength: number };
 
@@ -130,30 +138,33 @@ function resync(b: Uint8Array, from: number, end: number): number {
   return -1;
 }
 
-export function analyzeMp3(bytes: Uint8Array): AnalyzeResult {
+export function analyzeMp3(bytes: Uint8Array, options: AnalyzeOptions = {}): AnalyzeResult {
   if (bytes.length === 0) {
     return { ok: false, error: { code: "empty", message: "File is empty." } };
   }
+  const { deadline } = options;
 
-  // Skip any ID3v2 tag (so cover-art bytes can't false-sync), then find the first frame,
+  // Skip any ID3v2 tag (so cover-art bytes can't false-sync), then jump between 0xFF
+  // candidates (native indexOf — the same strategy as resync) to find the first frame,
   // classifying free-format vs non-MP3 along the way.
-  let i = id3v2End(bytes);
   let first: Header | null = null;
-  for (; i + 4 <= bytes.length; i++) {
-    const scan = scanHeader(bytes, i);
+  let firstOffset = -1;
+  let scans = 0;
+  for (let idx = bytes.indexOf(0xff, id3v2End(bytes)); idx !== -1; idx = bytes.indexOf(0xff, idx + 1)) {
+    if (deadline !== undefined && (scans++ & 0x3fff) === 0 && Date.now() > deadline) return TIMEOUT;
+    const scan = scanHeader(bytes, idx);
     if (scan.status === "free-format") {
       return { ok: false, error: { code: "free-format", message: "Free-format MP3 is not supported." } };
     }
     if (scan.status === "frame") {
       first = scan.header;
+      firstOffset = idx;
       break;
     }
   }
   if (first === null) {
     return { ok: false, error: { code: "not-mpeg1-layer3", message: "No MPEG-1 Layer III frames found." } };
   }
-
-  const firstOffset = i;
   const tag = parseHeaderTag(bytes, firstOffset, first.frameLength);
   const end = audioEnd(bytes);
 
@@ -165,14 +176,17 @@ export function analyzeMp3(bytes: Uint8Array): AnalyzeResult {
     if (afterHeader.status === "frame") channelMode = afterHeader.header.channelMode;
   }
 
-  // Hop frame-by-frame, counting and classifying CBR/VBR. A bad header triggers a bounded
-  // resync; substantial unrecoverable garbage marks the stream corrupt.
+  // Hop frame-by-frame from the first frame, counting and classifying CBR/VBR. A bad header
+  // triggers a bounded resync; substantial unrecoverable garbage marks the stream corrupt.
+  let i = firstOffset;
   let walked = 0;
   let bitrateSum = 0;
   let constantBitrate = true;
   let truncated = false;
   let corrupt = false;
+  let iterations = 0;
   while (i + 4 <= end) {
+    if (deadline !== undefined && (iterations++ & 0x1fff) === 0 && Date.now() > deadline) return TIMEOUT;
     const scan = scanHeader(bytes, i);
     if (scan.status === "frame") {
       if (i + scan.header.frameLength > end) {
@@ -194,7 +208,10 @@ export function analyzeMp3(bytes: Uint8Array): AnalyzeResult {
     i = next;
   }
 
-  const frameCount = tag.kind === "none" ? walked : walked - 1;
+  // Exclude the Xing/Info/VBRI header frame — but only when one was actually walked
+  // (a truncated header-only stream leaves walked == 0; never emit a negative count).
+  const hasHeaderFrame = tag.kind !== "none" && walked > 0;
+  const frameCount = hasHeaderFrame ? walked - 1 : walked;
   return {
     ok: true,
     analysis: {

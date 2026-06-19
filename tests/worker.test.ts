@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "../src/lib/limits";
 import worker from "../src/worker";
 
 type FrameBody = { frameCount: number };
@@ -33,9 +34,10 @@ test("missing file field -> 400", async () => {
   expect(res.status).toBe(400);
 });
 
-test("oversize upload -> 413", async () => {
-  const res = await worker.fetch(uploadOf(new Uint8Array(26 * 1024 * 1024))); // > 25 MB cap
+test("oversize upload -> 413 with a human-readable message", async () => {
+  const res = await worker.fetch(uploadOf(new Uint8Array(MAX_UPLOAD_BYTES + 1))); // just over the cap
   expect(res.status).toBe(413);
+  expect(((await res.json()) as ErrorBody).error.message).toContain(MAX_UPLOAD_LABEL);
 });
 
 test("non-POST method -> 405", async () => {

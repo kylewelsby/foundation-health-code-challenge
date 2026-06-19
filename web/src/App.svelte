@@ -3,24 +3,17 @@ import { AudioLines, BookOpen, Clock, FileAudio, Gauge, Radio, Shield, TriangleA
 import { cubicOut } from "svelte/easing";
 import { Tween } from "svelte/motion";
 import { fade, slide } from "svelte/transition";
-
-type Bitrate = { mode: "cbr"; kbps: number } | { mode: "vbr"; averageKbps: number; nominalKbps?: number };
-type Analysis = {
-  frameCount: number;
-  framesIncludingHeader: number;
-  durationSeconds: number;
-  sampleRate: number;
-  channelMode: string;
-  bitrate: Bitrate;
-  header: { kind: string; declaredFrameCount?: number };
-  flags: { truncated: boolean; corrupt: boolean };
-};
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "../../src/lib/limits";
+import type { FrameAnalysis } from "../../src/lib/mp3/analyze";
 
 let file = $state<File | null>(null);
 let dragging = $state(false);
 let loading = $state(false);
-let result = $state<Analysis | null>(null);
+let result = $state<FrameAnalysis | null>(null);
 let error = $state<string | null>(null);
+
+// The size cap is locally knowable, so reject oversize files before any upload.
+const tooBig = $derived(file !== null && file.size > MAX_UPLOAD_BYTES);
 
 const frameTween = new Tween(0, { duration: 650, easing: cubicOut });
 
@@ -31,7 +24,7 @@ function pick(f: File | null | undefined) {
 }
 
 async function analyze() {
-  if (!file || loading) return;
+  if (!file || loading || tooBig) return;
   loading = true;
   error = null;
   result = null;
@@ -42,7 +35,7 @@ async function analyze() {
     const res = await fetch("/file-upload", { method: "POST", body: form });
     const body: unknown = await res.json();
     if (res.ok) {
-      result = body as Analysis;
+      result = body as FrameAnalysis;
       frameTween.set(result.frameCount); // animate the count up to the result
     } else {
       const detail = body as { error?: { message?: string } };
@@ -59,6 +52,10 @@ function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = (seconds % 60).toFixed(1);
   return `${m}:${s.padStart(4, "0")}`;
+}
+
+function formatSize(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }
 
 const bitrateLabel = $derived.by(() => {
@@ -92,9 +89,11 @@ const bitrateLabel = $derived.by(() => {
 
     <div class="space-y-5 rounded-xl border border-border bg-card p-6 shadow-sm">
       <label
-        class="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors {dragging
-          ? 'border-ring bg-muted/40'
-          : 'border-border hover:bg-muted/30'}"
+        class="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors {tooBig
+          ? 'border-destructive/50 bg-destructive/5'
+          : dragging
+            ? 'border-ring bg-muted/40'
+            : 'border-border hover:bg-muted/30'}"
         ondragover={(e) => {
           e.preventDefault();
           dragging = true;
@@ -106,13 +105,19 @@ const bitrateLabel = $derived.by(() => {
           pick(e.dataTransfer?.files?.[0]);
         }}
       >
-        <Upload size={28} class="text-muted-foreground" />
+        <Upload size={28} class={tooBig ? "text-destructive" : "text-muted-foreground"} />
         {#if file}
           <span class="flex items-center gap-2 text-sm font-medium"><FileAudio size={16} /> {file.name}</span>
-          <span class="text-xs text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+          {#if tooBig}
+            <span class="flex items-center gap-1.5 text-xs text-destructive">
+              <TriangleAlert size={13} /> {formatSize(file.size)} — over the {MAX_UPLOAD_LABEL} limit
+            </span>
+          {:else}
+            <span class="text-xs text-muted-foreground">{formatSize(file.size)}</span>
+          {/if}
         {:else}
           <span class="text-sm font-medium">Drop an MP3 here, or click to browse</span>
-          <span class="text-xs text-muted-foreground">max 25 MB</span>
+          <span class="text-xs text-muted-foreground">max {MAX_UPLOAD_LABEL}</span>
         {/if}
         <input
           type="file"
@@ -125,7 +130,7 @@ const bitrateLabel = $derived.by(() => {
       <button
         type="button"
         class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity disabled:opacity-50"
-        disabled={!file || loading}
+        disabled={!file || loading || tooBig}
         onclick={analyze}
       >
         {#if loading}
