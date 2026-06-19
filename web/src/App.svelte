@@ -1,5 +1,5 @@
 <script lang="ts">
-import { AudioLines, BookOpen, Clock, FileAudio, Gauge, Radio, Shield, TriangleAlert, Upload, Waves } from "@lucide/svelte";
+import { AudioLines, BookOpen, Clock, FileAudio, Gauge, Pause, Play, Radio, Shield, TriangleAlert, Upload, Waves } from "@lucide/svelte";
 import { cubicOut } from "svelte/easing";
 import { Tween } from "svelte/motion";
 import { fade, slide } from "svelte/transition";
@@ -14,6 +14,15 @@ let flash = $state(false);
 let result = $state<FrameAnalysis | null>(null);
 let error = $state<string | null>(null);
 
+// Audio player state.
+let audio = $state<HTMLAudioElement | null>(null);
+let audioUrl = $state<string | null>(null);
+let isPlaying = $state(false);
+let currentTime = $state(0);
+let audioDuration = $state(0);
+let audioError = $state<string | null>(null);
+let rafId = $state<number | null>(null);
+
 // The size cap is locally knowable, so reject oversize files before any upload.
 const tooBig = $derived(file !== null && file.size > MAX_UPLOAD_BYTES);
 
@@ -27,12 +36,109 @@ $effect(() => {
   }
 });
 
+// Revoke the old blob URL when a new one is created or the component unmounts.
+$effect(() => {
+  const url = audioUrl;
+  return () => {
+    if (url) URL.revokeObjectURL(url);
+  };
+});
+
 const frameTween = new Tween(0, { duration: 650, easing: cubicOut });
+
+function resetAudio() {
+  stopRaf();
+  if (audio) {
+    audio.pause();
+    audio.src = "";
+    audio = null;
+  }
+  if (audioUrl) {
+    URL.revokeObjectURL(audioUrl);
+    audioUrl = null;
+  }
+  isPlaying = false;
+  currentTime = 0;
+  audioDuration = 0;
+  audioError = null;
+}
+
+function startRaf() {
+  if (rafId !== null) return;
+  function tick() {
+    if (audio) {
+      currentTime = audio.currentTime;
+    }
+    if (isPlaying) {
+      rafId = requestAnimationFrame(tick);
+    }
+  }
+  rafId = requestAnimationFrame(tick);
+}
+
+function stopRaf() {
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+}
+
+function togglePlay() {
+  if (!audio) return;
+  if (isPlaying) {
+    audio.pause();
+  } else {
+    audio.play().catch(() => {
+      audioError = "This file can’t be previewed.";
+    });
+  }
+}
+
+function setupAudio(f: File) {
+  resetAudio();
+  const url = URL.createObjectURL(f);
+  audioUrl = url;
+  const a = new Audio(url);
+  a.preload = "metadata";
+
+  a.addEventListener("play", () => {
+    isPlaying = true;
+    startRaf();
+  });
+  a.addEventListener("pause", () => {
+    isPlaying = false;
+    stopRaf();
+    if (audio) currentTime = audio.currentTime;
+  });
+  a.addEventListener("ended", () => {
+    isPlaying = false;
+    stopRaf();
+    currentTime = 0;
+  });
+  a.addEventListener("seeked", () => {
+    if (audio) currentTime = audio.currentTime;
+  });
+  a.addEventListener("loadedmetadata", () => {
+    if (audio) audioDuration = audio.duration || 0;
+  });
+  a.addEventListener("error", () => {
+    audioError = "This file can’t be previewed.";
+  });
+
+  audio = a;
+}
+
+const playbackFrame = $derived.by(() => {
+  if (!result) return 0;
+  const frame = Math.floor((currentTime * result.sampleRate) / 1152);
+  return Math.max(0, Math.min(frame, result.frameCount));
+});
 
 function pick(f: File | null | undefined) {
   file = f ?? null;
   result = null;
   error = null;
+  resetAudio();
 }
 
 async function analyze() {
@@ -70,6 +176,7 @@ async function analyze() {
     if (status >= 200 && status < 300) {
       result = body as FrameAnalysis;
       frameTween.set(result.frameCount); // animate the count up to the result
+      if (file) setupAudio(file);
     } else {
       const detail = body as { error?: { message?: string } };
       error = detail.error?.message ?? `Request failed (${status})`;
@@ -209,6 +316,55 @@ const bitrateLabel = $derived.by(() => {
             <div class="text-xs text-muted-foreground">
               {result.framesIncludingHeader.toLocaleString()} including the header frame
             </div>
+          </div>
+
+          <!-- Player: consolidated play controls, playback frame, and elapsed duration. -->
+          <div class="rounded-lg border border-border bg-muted/20 p-4">
+            <div class="flex items-center gap-4">
+              <button
+                type="button"
+                onclick={togglePlay}
+                disabled={!!audioError || !audio}
+                class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity disabled:opacity-50"
+                aria-label={isPlaying ? "Pause" : "Play"}
+              >
+                {#if isPlaying}
+                  <Pause size={18} />
+                {:else}
+                  <Play size={18} />
+                {/if}
+              </button>
+
+              <input
+                type="range"
+                min={0}
+                max={audioDuration || 1}
+                step={0.001}
+                value={currentTime}
+                disabled={!!audioError || !audio}
+                oninput={(e) => {
+                  if (!audio) return;
+                  const t = Number(e.currentTarget.value);
+                  audio.currentTime = t;
+                  currentTime = t;
+                }}
+                class="h-2 flex-1 cursor-pointer appearance-none rounded-full bg-muted accent-primary disabled:cursor-not-allowed"
+              />
+
+              <div class="min-w-[7rem] shrink-0 text-right text-sm">
+                <div class="font-medium tabular-nums">
+                  Frame {playbackFrame.toLocaleString()} / {result.frameCount.toLocaleString()}
+                </div>
+                <div class="text-xs tabular-nums text-muted-foreground">
+                  {formatDuration(currentTime)}
+                </div>
+              </div>
+            </div>
+            {#if audioError}
+              <div class="mt-2 text-xs text-destructive" transition:fade={{ duration: 150 }}>
+                {audioError}
+              </div>
+            {/if}
           </div>
 
           <div class="grid grid-cols-2 gap-3 text-sm">
