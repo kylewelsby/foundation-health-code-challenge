@@ -9,6 +9,7 @@ import type { FrameAnalysis } from "../../src/lib/mp3/analyze";
 let file = $state<File | null>(null);
 let dragging = $state(false);
 let loading = $state(false);
+let uploadProgress = $state(0);
 let result = $state<FrameAnalysis | null>(null);
 let error = $state<string | null>(null);
 
@@ -26,25 +27,47 @@ function pick(f: File | null | undefined) {
 async function analyze() {
   if (!file || loading || tooBig) return;
   loading = true;
+  uploadProgress = 0;
   error = null;
   result = null;
   frameTween.set(0, { duration: 0 }); // reset so the count-up starts from zero
   try {
     const form = new FormData();
     form.set("file", file);
-    const res = await fetch("/file-upload", { method: "POST", body: form });
-    const body: unknown = await res.json();
-    if (res.ok) {
+    const { status, body } = await new Promise<{ status: number; body: unknown }>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable) {
+          uploadProgress = Math.round((e.loaded / e.total) * 100);
+        }
+      });
+      xhr.addEventListener("load", () => {
+        uploadProgress = 100;
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(xhr.responseText);
+        } catch {
+          parsed = null;
+        }
+        resolve({ status: xhr.status, body: parsed });
+      });
+      xhr.addEventListener("error", () => reject(new Error("Network error")));
+      xhr.addEventListener("abort", () => reject(new Error("Upload cancelled")));
+      xhr.open("POST", "/file-upload");
+      xhr.send(form);
+    });
+    if (status >= 200 && status < 300) {
       result = body as FrameAnalysis;
       frameTween.set(result.frameCount); // animate the count up to the result
     } else {
       const detail = body as { error?: { message?: string } };
-      error = detail.error?.message ?? `Request failed (${res.status})`;
+      error = detail.error?.message ?? `Request failed (${status})`;
     }
   } catch (e) {
     error = e instanceof Error ? e.message : "Network error";
   } finally {
     loading = false;
+    uploadProgress = 0;
   }
 }
 
@@ -89,7 +112,7 @@ const bitrateLabel = $derived.by(() => {
 
     <div class="space-y-5 rounded-xl border border-border bg-card p-6 shadow-sm">
       <label
-        class="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors {tooBig
+        class="relative flex cursor-pointer flex-col items-center justify-center gap-3 overflow-hidden rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors {tooBig
           ? 'border-destructive/50 bg-destructive/5'
           : dragging
             ? 'border-ring bg-muted/40'
@@ -105,6 +128,9 @@ const bitrateLabel = $derived.by(() => {
           pick(e.dataTransfer?.files?.[0]);
         }}
       >
+        {#if loading}
+          <div class="pointer-events-none absolute inset-y-0 left-0 bg-white/10 transition-[width] duration-100" style="width: {uploadProgress}%"></div>
+        {/if}
         <Upload size={28} class={tooBig ? "text-destructive" : "text-muted-foreground"} />
         {#if file}
           <span class="flex items-center gap-2 text-sm font-medium"><FileAudio size={16} /> {file.name}</span>
@@ -134,7 +160,7 @@ const bitrateLabel = $derived.by(() => {
         onclick={analyze}
       >
         {#if loading}
-          <span class="animate-pulse">Analyzing…</span>
+          <span class="animate-pulse">Uploading…</span>
         {:else}
           <Gauge size={16} /> Analyze
         {/if}
