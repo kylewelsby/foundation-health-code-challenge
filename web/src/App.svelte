@@ -7,7 +7,7 @@ import { MAX_UPLOAD_BYTES } from "../../src/lib/limits";
 import type { FrameAnalysis } from "../../src/lib/mp3/analyze";
 import AudioPlayer from "./components/AudioPlayer.svelte";
 import UploadDropzone from "./components/UploadDropzone.svelte";
-import { uploadFile } from "./lib/upload";
+import { uploadFile, type UploadErrorBody } from "./lib/upload";
 
 let file = $state<File | null>(null);
 let loading = $state(false);
@@ -43,8 +43,8 @@ async function analyze() {
     result = res.body as FrameAnalysis;
     frameTween.set(result.frameCount);
   } else {
-    const detail = res.body as { error?: { message?: string } };
-    error = detail.error?.message ?? `Request failed (${res.status})`;
+    const detail = res.body as UploadErrorBody;
+    error = detail.error.message ?? `Request failed (${res.status})`;
   }
 
   window.setTimeout(() => {

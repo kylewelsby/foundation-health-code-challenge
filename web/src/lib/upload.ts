@@ -1,6 +1,9 @@
+/** Error shape returned by POST /file-upload on 4xx/5xx responses. */
+export type UploadErrorBody = { error: { code: string; message: string } };
+
 /** Result of uploading a file to POST /file-upload via XMLHttpRequest. */
 export type UploadResult =
-  | { readonly ok: true; readonly status: number; readonly body: unknown }
+  | { readonly ok: true; readonly status: number; readonly body: object | null }
   | { readonly ok: false; readonly error: string };
 
 /**
@@ -19,9 +22,10 @@ export function uploadFile(file: File, onProgress: (percent: number) => void): P
 
     xhr.addEventListener("load", () => {
       onProgress(100);
-      let parsed: unknown;
+      let parsed: object | null = null;
       try {
-        parsed = JSON.parse(xhr.responseText);
+        const value = JSON.parse(xhr.responseText);
+        parsed = value !== null && typeof value === "object" ? value : null;
       } catch {
         parsed = null;
       }

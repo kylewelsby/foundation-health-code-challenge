@@ -56,7 +56,7 @@ test("GET /openapi.json serves the OpenAPI spec", async () => {
   const res = await worker.fetch(new Request("http://localhost/openapi.json"));
   expect(res.status).toBe(200);
   expect(res.headers.get("content-type")).toContain("application/json");
-  const spec = (await res.json()) as { openapi: string; paths: Record<string, unknown> };
+  const spec = (await res.json()) as { openapi: string; paths: { "/file-upload"?: object } };
   expect(spec.openapi).toBe("3.1.0");
   expect(spec.paths["/file-upload"]).toBeDefined();
 });
